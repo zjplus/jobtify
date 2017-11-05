@@ -6,45 +6,41 @@
 import functools
 
 
-def notify(_job_name, _status):
-    print(_job_name, _status)
+def on_success_notify(*args, **kwargs):
+    print(kwargs["ret"])
+    print(args, kwargs)
 
 
-def send_success_mail(mail, this_task_id):
-    print(mail, this_task_id)
+def on_failed_notify(*args, **kwargs):
+    print(args, kwargs)
 
 
 class NotifyException(Exception):
-    '''
+    """
     This exception would be handled by send_emails decorator, the decorator will
     catch it and return its value to outer.
-    '''
+
+    """
 
     def __init__(self, value):
         self.value = value
         super(NotifyException, self).__init__(value)
 
 
-def send_emails(func):
+def notify(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        this_task_id = args
-        email = kwargs.pop('email', False)  # get email and remove it from kwargs
-        notify("tesst", True)
-        # try:
-        #     ret = func(self, *args, **kwargs)
-        # except NotifyException as ex:
-        #     if email:
-        #         send_failure_mail(email, this_task_id)
-        #     return ex.value
-        # except Exception:
-        #     if email:
-        #         send_failure_mail(email, this_task_id)
-        #     # It would be better to raise again to allow celery knows the task has failed
-        #     raise
-        # else:
-        #     if email:
-        #         send_success_mail(mail, this_task_id)
-        #     return ret
+        try:
+            ret = func(self, *args, **kwargs)
+        except NotifyException as ex:
+            on_failed_notify(*args, **kwargs)
+            return ex.value
+        except Exception:
+            on_failed_notify(*args, **kwargs)
+            raise
+        else:
+            kwargs["ret"] = ret
+            on_success_notify(*args, **kwargs)
+            return ret
 
     return wrapper

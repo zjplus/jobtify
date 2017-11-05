@@ -1,14 +1,14 @@
 #!/bin/env python
 # -*- encoding=utf8 -*-
 import os
-import time
-# from tasks import execute
-from notify import send_emails
-# from tasks import check_jobs
-
 import subprocess
-from celery import Celery
 import config
+
+import argparse
+
+from celery import Celery
+
+from notify import notify
 
 # 初始化 celery
 broker = config.celery_broker
@@ -17,59 +17,59 @@ celery = Celery('jobtify', broker=broker, backend=backend)
 
 
 class Job(object):
-    def __init__(self, env, name, cwd=os.getcwd()):
-        self.py_env = env
-        self.name = name
+    def __init__(self, cmd, cwd=os.getcwd()):
+        self.cmd = cmd
         self.cwd = cwd
 
-    def get_dict(self):
+    def to_dict(self):
         res_dict = {
-            "py_env": self.py_env,
-            "name": self.name,
-            "cwd ": self.cwd
+            "cmd": self.cmd,
+            "cwd": self.cwd
         }
         return res_dict
 
 
 class Jobtify(object):
-    """docstring for Jobtify"""
-
     def __init__(self):
-        self.__cwd__ = os.getcwd()
         self.job_dict = dict()
+        self.parser = argparse.ArgumentParser()
+        self.parser.add_argument('-cmd', action='store', dest='cmd', help='shell command')
+        self.parser.add_argument('-dir', action='store', dest='dir', help='work dir')
+        self.job = None
+        self.args = None
 
-    def execute_example(self):
-        job = Job("python", "test.py", "/Users/calvin/Project/jobtify")
-        print("execute 1")
-        # job1 = execute.delay([job.py_env, job.name], job.cwd)
-        job_name = job.get_dict()
-        job1 = execute.delay(job_name)
-        print("execute 2")
-        job2 = execute.delay(job_name)
-        print("execute end")
-        self.job_dict[job1.id] = job.name
-        self.job_dict[job2.id] = job.name
+    def parse_args(self):
+        self.args = self.parser.parse_args()
+        if not self.args.cmd:
+            raise KeyError(""" arg cmd is needed """)
+        cmd_list = self.args.cmd.split(" ")
+        self.job = Job(cmd_list, self.args.dir)
 
     @staticmethod
-    def exe_jobs(_cmd_list, _cwd=os.getcwd()):
-        print(_cmd_list, _cwd)
+    @celery.task
+    @notify
+    def execute(_job):
+        _cmd_list = _job["cmd"]
+        _cwd = _job["cwd"]
+
         sp = subprocess.run(_cmd_list, stdout=subprocess.PIPE, cwd=_cwd)
         if sp.returncode == 0:
-            return True
+            return _job, True
         else:
-            return False
+            return _job, False
 
-
-jobtify = Jobtify()
-
-
-@celery.task
-@send_emails
-def execute(job):
-    result = jobtify.exe_jobs([job["py_env"], job["name"]])
-    return job, result
+    def run(self):
+        self.execute.delay(self.job.to_dict())
 
 
 if __name__ == "__main__":
-    print(jobtify)
-    jobtify.execute_example()
+    try:
+        jobtify = Jobtify()
+        jobtify.parse_args()
+        jobtify.run()
+    except Exception as e:
+        print(e)
+
+        jobtify.parser.print_help()
+        # job = Job("python", "test.py", "/Users/calvin/Project/jobtify")
+        # jobtify.execute.delay(job.to_dict())
