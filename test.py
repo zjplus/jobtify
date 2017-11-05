@@ -1,6 +1,6 @@
 import time
 print("begin")
 
-time.sleep(1)
+time.sleep(10)
 
 print("hello jobtify")

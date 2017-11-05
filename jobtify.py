@@ -1,29 +1,75 @@
 #!/bin/env python
-#-*- encoding=utf8 -*-
+# -*- encoding=utf8 -*-
 import os
-from tasks import execute
-from notify import notify
+import time
+# from tasks import execute
+from notify import send_emails
+# from tasks import check_jobs
 
-__cwd__ = os.getcwd()
+import subprocess
+from celery import Celery
+import config
 
-if __name__=="__main__":
+# 初始化 celery
+broker = config.celery_broker
+backend = config.celery_backend
+celery = Celery('jobtify', broker=broker, backend=backend)
 
-	job = dict(py_env="python",name="test.py",cwd=__cwd__)
-	
-	execution = execute.delay(job)
-	while True:
-		if not execution.ready():
-			continue
-		break
 
-	result = execution.get()
-	notify(job["name"],result)
+class Job(object):
+    def __init__(self, env, name, cwd=os.getcwd()):
+        self.py_env = env
+        self.name = name
+        self.cwd = cwd
 
-    # print("__file__=%s" % __file__)
-    # print("os.path.realpath(__file__)=%s" % os.path.realpath(__file__))
-    # print("os.path.dirname(os.path.realpath(__file__))=%s" % os.path.dirname(os.path.realpath(__file__)))
-    # print("os.path.split(os.path.realpath(__file__))=%s" % os.path.split(os.path.realpath(__file__))[0])
-    # print("os.path.abspath(__file__)=%s" % os.path.abspath(__file__))
-    # print("os.getcwd()=%s" % os.getcwd())
-    # print("sys.path[0]=%s" % sys.path[0])
-    # print("sys.argv[0]=%s" % sys.argv[0])
+    def get_dict(self):
+        res_dict = {
+            "py_env": self.py_env,
+            "name": self.name,
+            "cwd ": self.cwd
+        }
+        return res_dict
+
+
+class Jobtify(object):
+    """docstring for Jobtify"""
+
+    def __init__(self):
+        self.__cwd__ = os.getcwd()
+        self.job_dict = dict()
+
+    def execute_example(self):
+        job = Job("python", "test.py", "/Users/calvin/Project/jobtify")
+        print("execute 1")
+        # job1 = execute.delay([job.py_env, job.name], job.cwd)
+        job_name = job.get_dict()
+        job1 = execute.delay(job_name)
+        print("execute 2")
+        job2 = execute.delay(job_name)
+        print("execute end")
+        self.job_dict[job1.id] = job.name
+        self.job_dict[job2.id] = job.name
+
+    @staticmethod
+    def exe_jobs(_cmd_list, _cwd=os.getcwd()):
+        print(_cmd_list, _cwd)
+        sp = subprocess.run(_cmd_list, stdout=subprocess.PIPE, cwd=_cwd)
+        if sp.returncode == 0:
+            return True
+        else:
+            return False
+
+
+jobtify = Jobtify()
+
+
+@celery.task
+@send_emails
+def execute(job):
+    result = jobtify.exe_jobs([job["py_env"], job["name"]])
+    return job, result
+
+
+if __name__ == "__main__":
+    print(jobtify)
+    jobtify.execute_example()
